@@ -25,37 +25,43 @@ This project provides an automated captioning system using OpenAI's Whisper for 
    cd Automated-Captioning
 
 2. Create a virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3.Install required dependencies:
-pip install -r requirements.txt
+    ```bash
+    pip install -r requirements.txt
 
 4. Install ffmpeg:
 On macOS:
+    ```bash
     brew install ffmpeg
 On Ubuntu:
+    ```bash
     sudo apt update
     sudo apt install ffmpeg
 On Windows:
-    Download and install ffmpeg from https://ffmpeg.org/download.html.
-    Add ffmpeg to the system PATH.
+    * Download and install ffmpeg from https://ffmpeg.org/download.html.
+    * Add ffmpeg to the system PATH.
 
 Usage
 Ensure your microphone is connected and working.
 
 Run the script to start real-time captioning:
+    ```bash
     python transcribe_match.py
 Speak into the microphone. The recognized text will be matched with the predefined script (script.json) and displayed.
 
 Project Files
-transcribe_match.py: Main script for speech-to-text and script matching.
-requirements.txt: List of dependencies.
-script.json: Example script data for matching.
+* transcribe_match.py: Main script for speech-to-text and script matching.
+* requirements.txt: List of dependencies.
+* script.json: Example script data for matching.
 
 Known Issues
 PyAudio installation on macOS:
     If you encounter issues installing PyAudio, ensure portaudio is installed:
+        ```bash
         brew install portaudio
         pip install pyaudio
 Missing ffmpeg:
