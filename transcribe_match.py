@@ -1,74 +1,100 @@
 import whisper
 import pyaudio
-import numpy as np
-import json
-import os
-from tempfile import NamedTemporaryFile
 import difflib
 import wave
+import os
+import json
+from tempfile import NamedTemporaryFile
+
+# 대본 데이터를 JSON 파일에서 로드
+def load_script(file_path):
+    """
+    JSON 파일에서 대본 데이터를 로드합니다.
+    Parameters:
+    - file_path (str): JSON 파일 경로
+    Returns:
+    - list: 대본 데이터 리스트
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 # 대본 매칭 함수
-def match_script(transcribed_text, script, match_length=3):
+def match_script(transcribed_text, script, previous_match=None, next_line_to_check=None, first_check=False):
     """
     Whisper 전사 결과를 대본 데이터와 매칭합니다.
     Parameters:
     - transcribed_text (str): Whisper로부터 얻은 텍스트
-    - script (list): 대본 데이터 (JSON 형태로 로드됨)
-    - match_length (int): 매칭할 음절 길이
+    - script (list): 대본 데이터 리스트
+    - previous_match (dict): 이전 매칭된 대본 줄
+    - next_line_to_check (dict): 이전에 매칭된 문장의 다음 줄
+    - first_check (bool): 첫 번째 매칭 여부 플래그
     Returns:
-    - dict: 매칭된 대본 줄 또는 매칭 실패 메시지
+    - dict: 매칭된 대본 줄과 매칭 방식
     """
-    transcribed_partial = transcribed_text[:match_length]  # 앞 음절만 추출
-    print(f"Matching with partial text: {transcribed_partial}")
+    if not transcribed_text.strip():  # 전사된 텍스트가 비어 있는 경우 처리
+        print("Transcribed text is empty. Skipping matching.")
+        return {"text": "No transcription", "method": "none", "next_line_to_check": next_line_to_check}
+
+    print(f"Matching with transcribed text: {transcribed_text}")
     best_match = None
     highest_similarity = 0
 
+    # 첫 번째 매칭: 첫 대본과 유사도 확인
+    if first_check:
+        first_script_line = script[0]["text"]
+        similarity = difflib.SequenceMatcher(None, transcribed_text, first_script_line).ratio()
+        print(f"Similarity with first line: {similarity}")
+        if similarity >= 0.3:
+            print(f"Matched with first line: {first_script_line} -> Similarity: {similarity}")
+            next_line_to_check = script[1] if len(script) > 1 else None
+            return {"text": script[0]["text"], "method": "first_line", "next_line_to_check": next_line_to_check}
+
+    # 이전 매칭된 줄의 다음 줄과 비교
+    if next_line_to_check:
+        similarity = difflib.SequenceMatcher(None, transcribed_text, next_line_to_check["text"]).ratio()
+        print(f"Similarity with next line to check: {similarity}")
+        if similarity >= 0.3:
+            print(f"Matched with next line to check: {next_line_to_check['text']} -> Similarity: {similarity}")
+            next_line_index = script.index(next_line_to_check) + 1
+            next_line_to_check = script[next_line_index] if next_line_index < len(script) else None
+            return {"text": next_line_to_check["text"], "method": "next_line_to_check", "next_line_to_check": next_line_to_check}
+
+    # 전체 스크립트에서 가장 유사한 줄 찾기
     for line in script:
-        line_partial = line["text"][:match_length]
-        similarity = difflib.SequenceMatcher(None, transcribed_partial, line_partial).ratio()
-        print(f"Comparing '{transcribed_partial}' with '{line_partial}' -> Similarity: {similarity}")
+        line_text = line["text"]
+        similarity = difflib.SequenceMatcher(None, transcribed_text, line_text).ratio()
         if similarity > highest_similarity:
             highest_similarity = similarity
             best_match = line
 
-    return best_match if highest_similarity > 0.5 else {"text": "No match found"}
+    if best_match:
+        print(f"Best Match: {best_match['text']} -> Similarity: {highest_similarity}")
+        next_line_index = script.index(best_match) + 1
+        next_line_to_check = script[next_line_index] if next_line_index < len(script) else None
+        return {"text": best_match["text"], "method": "overall", "next_line_to_check": next_line_to_check}
+    else:
+        print("No suitable match found.")
+        return {"text": "No match found", "method": "none", "next_line_to_check": next_line_to_check}
 
-# 디버그용 오디오 데이터를 저장하는 함수
+# 디버그용 오디오 데이터를 저장
 def save_audio_debug(audio_data, filename="debug_audio.wav"):
-    """
-    디버깅용으로 오디오 데이터를 WAV 파일로 저장합니다.
-    Parameters:
-    - audio_data (bytes): 오디오 데이터
-    - filename (str): 저장할 파일 이름
-    """
     with wave.open(filename, "wb") as wf:
-        wf.setnchannels(1)  # 모노
-        wf.setsampwidth(2)  # 16-bit PCM
-        wf.setframerate(16000)  # 샘플링 레이트
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
         wf.writeframes(audio_data)
 
 # Whisper로 오디오 전사
 def transcribe_audio_chunk(audio_data, model):
-    """
-    Whisper를 사용하여 오디오 청크를 텍스트로 변환합니다.
-    Parameters:
-    - audio_data (bytes): 오디오 데이터
-    - model: Whisper 모델 객체
-    Returns:
-    - str: 전사된 텍스트
-    """
     with NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
-        # WAV 파일로 저장
         with wave.open(temp_audio, "wb") as wf:
-            wf.setnchannels(1)  # 모노
-            wf.setsampwidth(2)  # 16-bit PCM
-            wf.setframerate(16000)  # 샘플링 레이트
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
             wf.writeframes(audio_data)
-
         temp_audio_path = temp_audio.name
 
     try:
-        # Whisper로 전사
         result = model.transcribe(temp_audio_path, language="ko")
         return result["text"]
     except Exception as e:
@@ -77,23 +103,11 @@ def transcribe_audio_chunk(audio_data, model):
     finally:
         os.remove(temp_audio_path)
 
-# 실시간 마이크 입력 처리 (오버랩 처리 추가)
-def start_recognition(chunk_duration=2, overlap_duration=1, total_duration=10):
-    """
-    마이크에서 입력받아 Whisper로 청크 단위로 처리하고 대본 매칭 결과를 출력합니다.
-    Parameters:
-    - chunk_duration (int): 각 청크의 길이(초)
-    - overlap_duration (int): 청크 간 겹치는 길이(초)
-    - total_duration (int): 총 실행 시간(초)
-    """
-    # Whisper 모델 로드
+# 실시간 마이크 입력 처리
+def start_recognition(script_path, chunk_duration=3, overlap_duration=1, total_duration=10):
     model = whisper.load_model("base")
+    script = load_script(script_path)
 
-    # 대본 데이터 로드
-    with open("script.json", "r", encoding="utf-8") as f:
-        script = json.load(f)
-
-    # PyAudio 설정
     CHUNK = 4096
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
@@ -108,7 +122,9 @@ def start_recognition(chunk_duration=2, overlap_duration=1, total_duration=10):
     overlap_frames = int(RATE / CHUNK * overlap_duration)
     total_chunks = int((total_duration - chunk_duration) / (chunk_duration - overlap_duration)) + 1
 
-    previous_frames = []  # 이전 청크 데이터 저장
+    previous_frames = []
+    previous_match = None
+    next_line_to_check = None
 
     try:
         for _ in range(total_chunks):
@@ -119,22 +135,24 @@ def start_recognition(chunk_duration=2, overlap_duration=1, total_duration=10):
                 data = stream.read(CHUNK, exception_on_overflow=False)
                 frames.append(data)
 
-            # 오버랩 처리: 이전 청크 데이터 추가
-            combined_frames = previous_frames[-overlap_frames:] + frames
+            combined_frames = previous_frames[-overlap_frames:] + frames if previous_frames else frames
             audio_data = b"".join(combined_frames)
 
-            # 디버그용 파일 저장
             save_audio_debug(audio_data, "debug_audio.wav")
             print("Debug audio saved as debug_audio.wav.")
 
             transcription = transcribe_audio_chunk(audio_data, model)
             print(f"Transcribed Text: {transcription}")
 
-            # 대본 매칭
-            matched_line = match_script(transcription, script)
-            print(f"Matched Line: {matched_line}")
+            # 첫 번째 비교 여부 플래그 설정
+            first_check = True if previous_match is None else False
+            match_result = match_script(transcription, script, previous_match, next_line_to_check, first_check)
 
-            # 현재 청크를 이전 청크 데이터로 저장
+            # 매칭 결과 업데이트
+            previous_match = match_result if match_result["method"] != "none" else None
+            next_line_to_check = match_result["next_line_to_check"]
+            print(f"Matched Line: {match_result}")
+
             previous_frames = frames
     except KeyboardInterrupt:
         print("Stopped by user.")
@@ -144,4 +162,5 @@ def start_recognition(chunk_duration=2, overlap_duration=1, total_duration=10):
     audio.terminate()
 
 if __name__ == "__main__":
-    start_recognition(chunk_duration=2, overlap_duration=1, total_duration=10)
+    # JSON 파일 경로 지정
+    start_recognition(script_path="script.json", chunk_duration=2, overlap_duration=1, total_duration=10)
