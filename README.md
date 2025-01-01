@@ -42,7 +42,7 @@ On Ubuntu:
      sudo apt update
      sudo apt install ffmpeg
 On Windows:
-    ```
+     ```
      * Download and install ffmpeg from https://ffmpeg.org/download.html.
      * Add ffmpeg to the system PATH.
 
