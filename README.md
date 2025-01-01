@@ -39,12 +39,12 @@ On macOS:
     brew install ffmpeg
 On Ubuntu:
     ```bash
-    sudo apt update
-    sudo apt install ffmpeg
+     sudo apt update
+     sudo apt install ffmpeg
 On Windows:
-   ```bash
-    * Download and install ffmpeg from https://ffmpeg.org/download.html.
-    * Add ffmpeg to the system PATH.
+    ```bash
+     * Download and install ffmpeg from https://ffmpeg.org/download.html.
+     * Add ffmpeg to the system PATH.
 
 Usage
 Ensure your microphone is connected and working.
