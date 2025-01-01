@@ -38,7 +38,7 @@ On macOS:
     ```bash
     brew install ffmpeg
 On Ubuntu:
-   ```bash
+    ```bash
     sudo apt update
     sudo apt install ffmpeg
 On Windows:
