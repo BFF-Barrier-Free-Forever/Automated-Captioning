@@ -35,7 +35,6 @@ def match_script(transcribed_text, script, previous_match=None, next_line_to_che
         print("Transcribed text is empty. Skipping matching.")
         return {"text": "No transcription", "method": "none", "next_line_to_check": next_line_to_check}
 
-    print(f"Matching with transcribed text: {transcribed_text}")
     best_match = None
     highest_similarity = 0
 
@@ -43,18 +42,18 @@ def match_script(transcribed_text, script, previous_match=None, next_line_to_che
     if first_check:
         first_script_line = script[0]["text"]
         similarity = difflib.SequenceMatcher(None, transcribed_text, first_script_line).ratio()
-        print(f"Similarity with first line: {similarity}")
+        print(f"Similarity with first line: {similarity}\n")
         if similarity >= 0.3:
-            print(f"Matched with first line: {first_script_line} -> Similarity: {similarity}")
+            print(f"Matched with first line: {first_script_line} -> Similarity: {similarity}\n")
             next_line_to_check = script[1] if len(script) > 1 else None
             return {"text": script[0]["text"], "method": "first_line", "next_line_to_check": next_line_to_check}
 
     # 이전 매칭된 줄의 다음 줄과 비교
     if next_line_to_check:
         similarity = difflib.SequenceMatcher(None, transcribed_text, next_line_to_check["text"]).ratio()
-        print(f"Similarity with next line to check: {similarity}")
+        print(f"Similarity with next line to check: {similarity}\n")
         if similarity >= 0.3:
-            print(f"Matched with next line to check: {next_line_to_check['text']} -> Similarity: {similarity}")
+            print(f"Matched with next line to check: {next_line_to_check['text']} -> Similarity: {similarity}\n")
             next_line_index = script.index(next_line_to_check) + 1
             next_line_to_check = script[next_line_index] if next_line_index < len(script) else None
             return {"text": next_line_to_check["text"], "method": "next_line_to_check", "next_line_to_check": next_line_to_check}
@@ -68,7 +67,7 @@ def match_script(transcribed_text, script, previous_match=None, next_line_to_che
             best_match = line
 
     if best_match:
-        print(f"Best Match: {best_match['text']} -> Similarity: {highest_similarity}")
+        print(f"Best Match: {best_match['text']} -> Similarity: {highest_similarity}\n")
         next_line_index = script.index(best_match) + 1
         next_line_to_check = script[next_line_index] if next_line_index < len(script) else None
         return {"text": best_match["text"], "method": "overall", "next_line_to_check": next_line_to_check}
@@ -104,10 +103,13 @@ def transcribe_audio_chunk(audio_data, model):
         os.remove(temp_audio_path)
 
 # 실시간 마이크 입력 처리
-def start_recognition(script_path, chunk_duration=3, overlap_duration=1, total_duration=10):
+def start_recognition(script_path, chunk_duration=2, overlap_duration=1, total_duration=10):
     model = whisper.load_model("base")
+
+    # 대본 데이터 로드
     script = load_script(script_path)
 
+    # PyAudio 설정
     CHUNK = 4096
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
@@ -122,9 +124,8 @@ def start_recognition(script_path, chunk_duration=3, overlap_duration=1, total_d
     overlap_frames = int(RATE / CHUNK * overlap_duration)
     total_chunks = int((total_duration - chunk_duration) / (chunk_duration - overlap_duration)) + 1
 
-    previous_frames = []
-    previous_match = None
-    next_line_to_check = None
+    previous_match = None  # 이전 매칭된 대본
+    has_started = False  # 첫 시작 여부 플래그
 
     try:
         for _ in range(total_chunks):
@@ -135,7 +136,7 @@ def start_recognition(script_path, chunk_duration=3, overlap_duration=1, total_d
                 data = stream.read(CHUNK, exception_on_overflow=False)
                 frames.append(data)
 
-            combined_frames = previous_frames[-overlap_frames:] + frames if previous_frames else frames
+            combined_frames = frames if not has_started else previous_frames[-overlap_frames:] + frames
             audio_data = b"".join(combined_frames)
 
             save_audio_debug(audio_data, "debug_audio.wav")
@@ -144,14 +145,13 @@ def start_recognition(script_path, chunk_duration=3, overlap_duration=1, total_d
             transcription = transcribe_audio_chunk(audio_data, model)
             print(f"Transcribed Text: {transcription}")
 
-            # 첫 번째 비교 여부 플래그 설정
-            first_check = True if previous_match is None else False
-            match_result = match_script(transcription, script, previous_match, next_line_to_check, first_check)
+            if not has_started and transcription.strip():  # 첫 전사된 텍스트가 있는 경우 시작
+                has_started = True
+                print("First non-empty transcription detected, starting script matching...")
 
-            # 매칭 결과 업데이트
-            previous_match = match_result if match_result["method"] != "none" else None
-            next_line_to_check = match_result["next_line_to_check"]
-            print(f"Matched Line: {match_result}")
+            if has_started:
+                previous_match = match_script(transcription, script, previous_match)
+                print(f"Matched Line: {previous_match}")
 
             previous_frames = frames
     except KeyboardInterrupt:
